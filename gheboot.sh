@@ -27,9 +27,41 @@ CORES="8"
 MEMORY="65535"
 NETWORK="vmbr0"
 
-function error() { echo "ERROR: $1"; exit 1; }
-function show_help() { grep '^#/' < "$0" | cut -c4-; exit 1; }
-if [ "$1" == "" ]; then show_help; fi
+function print_help() { grep '^#/' < "$0" | cut -c4-; exit 1; }
+function print_error() { echo "ERROR: $1"; exit 1; }
+function run_command() { [ ! `command -v $1` ] && print_error "Command '$1' not found" || bash -c "$1 $2"; }
+function download_image() { run_command "wget" "$1" || print_error "Failed to download $1"; }
+
+function create_vm() {
+  local vm_id=$1
+  local ghes_version=$2
+  local hostname=$3
+  local boot_storage=$4
+  local ssd_storage=$5
+  local cores=$6
+  local memory=$7
+  local network=$8
+
+  run_command "qm" "create $vm_id \
+    --name '$hostname' \
+    --net0 virtio,bridge=$network \
+    --ostype l26 \
+    --memory $memory \
+    --onboot no \
+    --cpu cputype=host \
+    --sockets 1 \
+    --cores $cores \
+    --vga qxl" || print_error "Failed to create VM $hostname ($vm_id)"
+
+  run_command "qm" "importdisk $vm_id 'github-enterprise-$ghes_version.qcow2' '$boot_storage'" || print_error "Failed to import root disk into appliance"
+  run_command "qm" "set $vm_id --scsi0 $boot_storage:vm-$vm_id-disk-0" || print_error "Failed to configure boot disk"
+  run_command "qm" "set $vm_id --boot order=scsi0" || error "Failed to set boot order"
+  run_command "pvesm" "alloc '$ssd_storage' '$vm_id' vm-$vm_id-disk-1 200G" || print_error "Failed to allocate data storage disk"
+  run_command "qm" "set $vm_id --scsihw virtio-scsi-pci --scsi1 $ssd_storage:vm-$vm_id-disk-1,discard=on,ssd=1" || print_error "Failed to set data storage disk options"
+  run_command "qm" "start $vm_id" || print_error "Failed to boot appliance"
+}
+
+if [ "$1" == "" ]; then print_help; fi
 
 # process command line arguments
 ARGUMENTS=()
@@ -37,38 +69,38 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     -v|--version)
       GHES_VERSION="$2"
-      shift && shift
+      shift 2
       ;;
     -h|--hostname)
       GHES_HOSTNAME="$2"
-      shift && shift
+      shift 2
       ;;
     -b|--bootstorage)
       BOOT_STORAGE="$2"
-      shift && shift
+      shift 2
       ;;
     -s|--ssdstorage)
       SSD_STORAGE="$2"
-      shift && shift
+      shift 2
       ;;
     -c|--cores)
       CORES="$2"
-      shift && shift
+      shift 2
       ;;
     -m|--memory)
       MEMORY="$2"
-      shift && shift
+      shift 2
       ;;
      -n|--network)
       NETWORK="$2"
-      shift && shift
+      shift 2
       ;;
     -d|--help)
       GHES_DOWNLOAD=1
       shift
       ;;
     -*|--*)
-      show_help ;;
+      print_help ;;
     *)
       ARGUMENTS+=("$1")
       shift
@@ -77,31 +109,15 @@ while [[ $# -gt 0 ]]; do
 done
 set -- "${ARGUMENTS[@]}"
 
-VM_ID=`pvesh get /cluster/nextid`
+VM_ID=$(run_command "pvesh" "get /cluster/nextid")
 GHES_URL="https://github-enterprise.s3.amazonaws.com/kvm/releases/github-enterprise-$GHES_VERSION.qcow2"
 
 if [ "$GHES_DOWNLOAD" == "1" ]; then
-  wget "$GHES_URL" || error "Failed to download $GHES_URL"
+  download_image "$GHES_URL"
 fi
 
 if [ -f "github-enterprise-$GHES_VERSION.qcow2" ]; then
-  qm create $VM_ID \
-    --name "$GHES_HOSTNAME" \
-    --net0 virtio,bridge=$NETWORK \
-    --ostype l26 \
-    --memory $MEMORY \
-    --onboot no \
-    --cpu cputype=host \
-    --sockets 1 \
-    --cores $CORES \
-    --vga qxl || error "Failed to create VM $GHES_HOSTNAME ($VM_ID)"
-
-  qm importdisk $VM_ID "github-enterprise-$GHES_VERSION.qcow2" "$BOOT_STORAGE" || error "Failed to import root disk into appliance"
-  qm set $VM_ID --scsi0 $BOOT_STORAGE:vm-$VM_ID-disk-0 || error "Failed to configure boot disk"
-  qm set $VM_ID --boot order=scsi0 || error "Failed to set boot order"
-  pvesm alloc "$SSD_STORAGE" "$VM_ID" vm-$VM_ID-disk-1 200G || error "Failed to allocate data storage disk"
-  qm set $VM_ID --scsihw virtio-scsi-pci --scsi1 $SSD_STORAGE:vm-$VM_ID-disk-1,discard=on,ssd=1 || error "Failed to set data storage disk options"
-  qm start $VM_ID || error "Failed to boot appliance"
+  create_vm "$VM_ID" "$GHES_VERSION" "$GHES_HOSTNAME" "$BOOT_STORAGE" "$SSD_STORAGE" "$CORES" "$MEMORY" "$NETWORK"
 else
-  error "Disk image 'github-enterprise-$GHES_VERSION.qcow2' not found"
+  print_error "Disk image 'github-enterprise-$GHES_VERSION.qcow2' not found"
 fi
