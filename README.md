@@ -9,6 +9,7 @@ OPTIONS:
    -c  |  --cores        Number of vCPU cores. Default: 8
    -m  |  --memory       Amount of RAM in megabytes. Default: 65535
    -n  |  --network      Network device name. Default: vmbr0
+   -o  |  --onboot       Configure VM to boot when hypervisor reboots.
    -d  |  --download     Download QCOW2 image for specified version.
 
 EXAMPLE:
