@@ -42,7 +42,7 @@ function create_vm() {
     --net0 virtio,bridge=${ghes_vm[network]} \
     --ostype l26 \
     --memory ${ghes_vm[memory]} \
-    --onboot $ghes_vm[onboot] \
+    --onboot ${ghes_vm[onboot]} \
     --cpu cputype=host \
     --sockets 1 \
     --cores ${ghes_vm[cores]} \
