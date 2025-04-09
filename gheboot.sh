@@ -34,32 +34,24 @@ function download_image() { run_command "wget" "$1" || print_error "Failed to do
 
 function create_vm() {
   declare -n ghes_vm=$1
-  local vm_id=${ghes_vm[vm_id]}
-  local ghes_version=${ghes_vm[ghes_version]}
-  local hostname=${ghes_vm[ghes_hostname]}
-  local boot_storage=${ghes_vm[boot_storage]}
-  local ssd_storage=${ghes_vm[ssd_storage]}
-  local cores=${ghes_vm[cores]}
-  local memory=${ghes_vm[memory]}
-  local network=${ghes_vm[network]}
-
-  run_command "qm" "create $vm_id \
-    --name '$hostname' \
-    --net0 virtio,bridge=$network \
+  
+  run_command "qm" "create ${ghes_vm[id]} \
+    --name '${ghes_vm[hostname]}' \
+    --net0 virtio,bridge=${ghes_vm[network]} \
     --ostype l26 \
-    --memory $memory \
+    --memory ${ghes_vm[memory]} \
     --onboot no \
     --cpu cputype=host \
     --sockets 1 \
-    --cores $cores \
-    --vga qxl" || print_error "Failed to create '$hostname' ($vm_id)"
+    --cores ${ghes_vm[cores]} \
+    --vga qxl" || print_error "Failed to create '${ghes_vm[hostname]}' (${ghes_vm[id]})"
 
-  run_command "qm" "importdisk $vm_id 'github-enterprise-$ghes_version.qcow2' '$boot_storage'" || print_error "Failed to import root disk"
-  run_command "qm" "set $vm_id --scsi0 $boot_storage:vm-$vm_id-disk-0" || print_error "Failed to configure boot disk"
-  run_command "qm" "set $vm_id --boot order=scsi0" || error "Failed to configure boot order"
-  run_command "pvesm" "alloc '$ssd_storage' '$vm_id' vm-$vm_id-disk-1 200G" || print_error "Failed to allocate storage disk"
-  run_command "qm" "set $vm_id --scsihw virtio-scsi-pci --scsi1 $ssd_storage:vm-$vm_id-disk-1,discard=on,ssd=1" || print_error "Failed to configure storage disk"
-  run_command "qm" "start $vm_id" || print_error "Failed to boot"
+  run_command "qm" "importdisk ${ghes_vm[id]} 'github-enterprise-${ghes_vm[version]}.qcow2' '${ghes_vm[boot_storage]}'" || print_error "Failed to import root disk"
+  run_command "qm" "set ${ghes_vm[id]} --scsi0 ${ghes_vm[boot_storage]}:vm-${ghes_vm[id]}-disk-0" || print_error "Failed to configure boot disk"
+  run_command "qm" "set ${ghes_vm[id]} --boot order=scsi0" || error "Failed to configure boot order"
+  run_command "pvesm" "alloc '${ghes_vm[ssd_storage]}' '${ghes_vm[id]}' vm-${ghes_vm[id]}-disk-1 200G" || print_error "Failed to allocate storage disk"
+  run_command "qm" "set ${ghes_vm[id]} --scsihw virtio-scsi-pci --scsi1 ${ghes_vm[ssd_storage]}:vm-${ghes_vm[id]}-disk-1,discard=on,ssd=1" || print_error "Failed to configure storage disk"
+  run_command "qm" "start ${ghes_vm[id]}" || print_error "Failed to boot"
 }
 
 if [ "$1" == "" ]; then print_help; fi
@@ -119,9 +111,9 @@ fi
 
 if [ -f "github-enterprise-$GHES_VERSION.qcow2" ]; then
   declare -A new_vm=(
-    [vm_id]="$VM_ID"
-    [ghes_version]="$GHES_VERSION"
-    [ghes_hostname]="$GHES_HOSTNAME"
+    [id]="$VM_ID"
+    [version]="$GHES_VERSION"
+    [hostname]="$GHES_HOSTNAME"
     [boot_storage]="$BOOT_STORAGE"
     [ssd_storage]="$SSD_STORAGE"
     [cores]="$CORES"
