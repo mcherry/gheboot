@@ -33,14 +33,15 @@ function run_command() { [ ! `command -v $1` ] && print_error "Command '$1' not 
 function download_image() { run_command "wget" "$1" || print_error "Failed to download $1"; }
 
 function create_vm() {
-  local vm_id=$1
-  local ghes_version=$2
-  local hostname=$3
-  local boot_storage=$4
-  local ssd_storage=$5
-  local cores=$6
-  local memory=$7
-  local network=$8
+  declare -n ghes_vm=$1
+  local vm_id=${ghes_vm[vm_id]}
+  local ghes_version=${ghes_vm[ghes_version]}
+  local hostname=${ghes_vm[ghes_hostname]}
+  local boot_storage=${ghes_vm[boot_storage]}
+  local ssd_storage=${ghes_vm[ssd_storage]}
+  local cores=${ghes_vm[cores]}
+  local memory=${ghes_vm[memory]}
+  local network=${ghes_vm[network]}
 
   run_command "qm" "create $vm_id \
     --name '$hostname' \
@@ -51,14 +52,14 @@ function create_vm() {
     --cpu cputype=host \
     --sockets 1 \
     --cores $cores \
-    --vga qxl" || print_error "Failed to create VM $hostname ($vm_id)"
+    --vga qxl" || print_error "Failed to create '$hostname' ($vm_id)"
 
-  run_command "qm" "importdisk $vm_id 'github-enterprise-$ghes_version.qcow2' '$boot_storage'" || print_error "Failed to import root disk into appliance"
+  run_command "qm" "importdisk $vm_id 'github-enterprise-$ghes_version.qcow2' '$boot_storage'" || print_error "Failed to import root disk"
   run_command "qm" "set $vm_id --scsi0 $boot_storage:vm-$vm_id-disk-0" || print_error "Failed to configure boot disk"
-  run_command "qm" "set $vm_id --boot order=scsi0" || error "Failed to set boot order"
-  run_command "pvesm" "alloc '$ssd_storage' '$vm_id' vm-$vm_id-disk-1 200G" || print_error "Failed to allocate data storage disk"
-  run_command "qm" "set $vm_id --scsihw virtio-scsi-pci --scsi1 $ssd_storage:vm-$vm_id-disk-1,discard=on,ssd=1" || print_error "Failed to set data storage disk options"
-  run_command "qm" "start $vm_id" || print_error "Failed to boot appliance"
+  run_command "qm" "set $vm_id --boot order=scsi0" || error "Failed to configure boot order"
+  run_command "pvesm" "alloc '$ssd_storage' '$vm_id' vm-$vm_id-disk-1 200G" || print_error "Failed to allocate storage disk"
+  run_command "qm" "set $vm_id --scsihw virtio-scsi-pci --scsi1 $ssd_storage:vm-$vm_id-disk-1,discard=on,ssd=1" || print_error "Failed to configure storage disk"
+  run_command "qm" "start $vm_id" || print_error "Failed to boot"
 }
 
 if [ "$1" == "" ]; then print_help; fi
@@ -117,7 +118,17 @@ if [ "$GHES_DOWNLOAD" == "1" ]; then
 fi
 
 if [ -f "github-enterprise-$GHES_VERSION.qcow2" ]; then
-  create_vm "$VM_ID" "$GHES_VERSION" "$GHES_HOSTNAME" "$BOOT_STORAGE" "$SSD_STORAGE" "$CORES" "$MEMORY" "$NETWORK"
+  declare -A new_vm=(
+    [vm_id]="$VM_ID"
+    [ghes_version]="$GHES_VERSION"
+    [ghes_hostname]="$GHES_HOSTNAME"
+    [boot_storage]="$BOOT_STORAGE"
+    [ssd_storage]="$SSD_STORAGE"
+    [cores]="$CORES"
+    [memory]="$MEMORY"
+    [network]="$NETWORK"
+  )
+  create_vm new_vm
 else
   print_error "Disk image 'github-enterprise-$GHES_VERSION.qcow2' not found"
 fi
