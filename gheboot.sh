@@ -12,6 +12,7 @@
 #/   -c  |  --cores        Number of vCPU cores. Default: 8
 #/   -m  |  --memory       Amount of RAM in megabytes. Default: 65535
 #/   -n  |  --network      Network device name. Default: vmbr0
+#/   -o  |  --onboot       Configure VM to boot when hypervisor reboots.
 #/   -d  |  --download     Download QCOW2 image for specified version.
 #/
 #/ EXAMPLE:
@@ -26,6 +27,7 @@ GHES_DOWNLOAD=0
 CORES="8"
 MEMORY="65535"
 NETWORK="vmbr0"
+ONBOOT="no"
 
 function print_help() { grep '^#/' < "$0" | cut -c4-; exit 1; }
 function print_error() { echo "ERROR: $1"; exit 1; }
@@ -40,7 +42,7 @@ function create_vm() {
     --net0 virtio,bridge=${ghes_vm[network]} \
     --ostype l26 \
     --memory ${ghes_vm[memory]} \
-    --onboot no \
+    --onboot $ghes_vm[onboot] \
     --cpu cputype=host \
     --sockets 1 \
     --cores ${ghes_vm[cores]} \
@@ -88,6 +90,10 @@ while [[ $# -gt 0 ]]; do
       NETWORK="$2"
       shift 2
       ;;
+    -o|--onboot)
+      ONBOOT="yes"
+      shift
+      ;;
     -d|--help)
       GHES_DOWNLOAD=1
       shift
@@ -119,6 +125,7 @@ if [ -f "github-enterprise-$GHES_VERSION.qcow2" ]; then
     [cores]="$CORES"
     [memory]="$MEMORY"
     [network]="$NETWORK"
+    [onboot]="$ONBOOT"
   )
   create_vm new_vm
 else
