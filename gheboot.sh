@@ -46,9 +46,11 @@ function print_error() { echo "ERROR: $1"; exit 1; }
 function run_command() { [ ! `command -v $1` ] && print_error "Command '$1' not found" || bash -c "$1 $2"; }
 function download_image() { run_command "wget" "$1" || print_error "Failed to download $1"; }
 
+# Function to create a new VM in Proxmox and optionally power it on
 function create_vm() {
   declare -n ghes_vm=$1
   
+  # create VM
   run_command "qm" "create ${ghes_vm[id]} \
     --name '${ghes_vm[hostname]}' \
     --net0 virtio,bridge=${ghes_vm[network]} \
@@ -60,10 +62,19 @@ function create_vm() {
     --cores ${ghes_vm[cores]} \
     --vga qxl" || print_error "Failed to create '${ghes_vm[hostname]}' (${ghes_vm[id]})"
 
+  # import disk image
   run_command "qm" "importdisk ${ghes_vm[id]} 'github-enterprise-${ghes_vm[version]}.qcow2' '${ghes_vm[boot_storage]}'" || print_error "Failed to import root disk"
+  
+  # add the disk image to the VM
   run_command "qm" "set ${ghes_vm[id]} --scsi0 ${ghes_vm[boot_storage]}:vm-${ghes_vm[id]}-disk-0" || print_error "Failed to configure boot disk"
+  
+  # set the boot order
   run_command "qm" "set ${ghes_vm[id]} --boot order=scsi0" || error "Failed to configure boot order"
+  
+  # create data disk on SSD storage
   run_command "pvesm" "alloc '${ghes_vm[ssd_storage]}' '${ghes_vm[id]}' vm-${ghes_vm[id]}-disk-1 200G" || print_error "Failed to allocate storage disk"
+  
+  # add the disk to the VM
   run_command "qm" "set ${ghes_vm[id]} --scsihw virtio-scsi-pci --scsi1 ${ghes_vm[ssd_storage]}:vm-${ghes_vm[id]}-disk-1,discard=on,ssd=1" || print_error "Failed to configure storage disk"
   
   if [ "${ghes_vm[poweron]}" == "1" ]; then
@@ -90,7 +101,8 @@ function initial_config() {
   local insecure=$5
   local hostname=$(run_command "hostname")
 
-  # Ping the subnet to hopefully get the VM's IP in the ARP table
+  # Ping every IP in the subnet to hopefully get the VM's IP in the ARP table
+  # Each ping times out after 0.2 seconds
   echo "* Attempting to find VM IP address, this might take a few minutes..."
   for ip in $(list_subnet_ips $ip_netmask); do
     timeout 0.2 ping -i 0.2 -c1 "$ip" > /dev/null 2>&1
@@ -99,7 +111,10 @@ function initial_config() {
   for i in {1..5}; do
     echo -n "* Looking for VM IP address (attempt $i of 5)..."
     
+    # get the MAC address of the VM from the proxmox API
     mac_address=$(run_command "pvesh" "get /nodes/$hostname/qemu/$vm_id/config --noborder|grep net0|cut -d ',' -f1|cut -d '=' -f2")
+    
+    # get the current ARP table
     ip_address=$(run_command "ip" "neigh show|grep -i $mac_address|grep -v fe80|cut -d ' ' -f 1")
 
     if [ "$ip_address" != "" ]; then
@@ -108,7 +123,7 @@ function initial_config() {
         echo "* Configuring root site password and uploading license file (attempt $a of 5)..."
         config_output=$(run_command "curl" "$insecure -s -L -X POST -u 'api_key:your-password' -H 'Content-Type: multipart/form-data' https://$ip_address/manage/v1/config/init --form 'license=@$license_file' --form 'password=$site_password' 2>&1")
         if (echo "$config_output" | grep "Sorry"); then
-          [ $a -lt 5 ] && sleep 45
+          [ $a -lt 5 ] && sleep 30
         else
           echo "Initial configuration completed. You can finish setting up your GHES instance at https://$ip_address:8443/setup"
           break 
