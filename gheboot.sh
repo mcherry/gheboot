@@ -10,6 +10,7 @@
 #/   -b  |  --bootstorage  Name of boot disk storage.
 #/   -s  |  --ssdstorage   Name of SSD storage.
 #/   -c  |  --cores        Number of vCPU cores. Default: 8
+#/   -t  |  --cputype      CPU type. Default: host
 #/   -m  |  --memory       Amount of RAM in megabytes. Default: 65535
 #/   -n  |  --network      Network device name. Default: vmbr0
 #/   -r  |  --root         Root site password for initial configuration.
@@ -29,7 +30,7 @@
 #/ # and use the configured "vmbr0" network bridge. Also configure root site password and
 #/ # upload license.
 #/
-#/ gheboot.sh -v 3.15.4 -h ghes-primary -b local -s local-ssd -c 8 -m 65535 -n vmbr0 \
+#/ gheboot.sh -v 3.16.1 -h ghes-primary -b local -s local-ssd -c 8 -m 65535 -n vmbr0 \
 #/     -r "YourPassword123@" -l license-file.ghl -i 192.168.1.0/24 -k -p -d
 
 GHES_DOWNLOAD=0
@@ -40,6 +41,7 @@ ONBOOT="no"
 POWERON=0
 ALLOW_INSECURE=""
 IP_NETMASK=""
+CPUTYPE="host"
 
 function print_help() { grep '^#/' < "$0" | cut -c4-; exit 1; }
 function print_error() { echo "ERROR: $1"; exit 1; }
@@ -57,7 +59,7 @@ function create_vm() {
     --ostype l26 \
     --memory ${ghes_vm[memory]} \
     --onboot ${ghes_vm[onboot]} \
-    --cpu cputype=host \
+    --cpu cputype=${ghes_vm[cputype]} \
     --sockets 1 \
     --cores ${ghes_vm[cores]} \
     --vga qxl" || print_error "Failed to create '${ghes_vm[hostname]}' (${ghes_vm[id]})"
@@ -94,39 +96,34 @@ function create_vm() {
 #
 # The function retries the configuration process a few times in case of failure
 function initial_config() {
-  local vm_id=$1
-  local ip_netmask=$2
-  local site_password=$3
-  local license_file=$4
-  local insecure=$5
-  local hostname=$(run_command "hostname")
+  declare -n ghes_vm=$1
 
   # Ping every IP in the subnet to hopefully get the VM's IP in the ARP table
   # Each ping times out after 0.2 seconds
   echo "* Attempting to find VM IP address, this might take a few minutes..."
-  for ip in $(list_subnet_ips $ip_netmask); do
+  for ip in $(list_subnet_ips ${ghes_vm[ip_netmask]}); do
     timeout 0.2 ping -i 0.2 -c1 "$ip" > /dev/null 2>&1
   done
 
+  # get the MAC address of the VM from the proxmox API
+  mac_address=$(run_command "pvesh" "get /nodes/$(run_command "hostname")/qemu/${ghes_vm[id]}/config --noborder|grep net0|cut -d ',' -f1|cut -d '=' -f2")
+  
   for i in {1..5}; do
     echo -n "* Looking for VM IP address (attempt $i of 5)..."
-    
-    # get the MAC address of the VM from the proxmox API
-    mac_address=$(run_command "pvesh" "get /nodes/$hostname/qemu/$vm_id/config --noborder|grep net0|cut -d ',' -f1|cut -d '=' -f2")
     
     # get the current ARP table
     ip_address=$(run_command "ip" "neigh show|grep -i $mac_address|grep -v fe80|cut -d ' ' -f 1")
 
     if [ "$ip_address" != "" ]; then
-      echo "found $ip_address"
+      echo "found $ip_address matching $mac_address"
       for a in {1..5}; do
         echo "* Configuring root site password and uploading license file (attempt $a of 5)..."
-        config_output=$(run_command "curl" "$insecure -s -L -X POST -u 'api_key:your-password' -H 'Content-Type: multipart/form-data' https://$ip_address/manage/v1/config/init --form 'license=@$license_file' --form 'password=$site_password' 2>&1")
+        config_output=$(run_command "curl" "${ghes_vm[insecure]} -s -L -X POST -u 'api_key:your-password' -H 'Content-Type: multipart/form-data' https://$ip_address/manage/v1/config/init --form 'license=@${ghes_vm[license_file]}' --form 'password=${ghes_vm[root_password]}' 2>&1")
         if (echo "$config_output" | grep "Sorry"); then
           [ $a -lt 5 ] && sleep 30
         else
           echo "Initial configuration completed. You can finish setting up your GHES instance at https://$ip_address:8443/setup"
-          break 
+          break
         fi
       done
 
@@ -202,6 +199,10 @@ while [[ $# -gt 0 ]]; do
       CORES="$2"
       shift 2
       ;;
+    -t|--cputype)
+      CPUTYPE="$2"
+      shift 2
+      ;;
     -m|--memory)
       MEMORY="$2"
       shift 2
@@ -263,6 +264,7 @@ if [ -f "github-enterprise-$GHES_VERSION.qcow2" ]; then
     [boot_storage]="$BOOT_STORAGE"
     [ssd_storage]="$SSD_STORAGE"
     [cores]="$CORES"
+    [cputype]="$CPUTYPE"
     [memory]="$MEMORY"
     [network]="$NETWORK"
     [onboot]="$ONBOOT"
@@ -272,8 +274,17 @@ if [ -f "github-enterprise-$GHES_VERSION.qcow2" ]; then
 
   if [ -n "$ROOT_PASSWORD" ] && [ -n "$LICENSE_FILE" ]; then
     echo "* Waiting for VM to boot..."
-    sleep 60
-    initial_config "$VM_ID" "$IP_NETMASK" "$ROOT_PASSWORD" "$LICENSE_FILE" "$ALLOW_INSECURE" || print_error "Initial configuration failed"
+    sleep 45
+
+    declare -A config_vm=(
+      [id]="$VM_ID"
+      [ip_netmask]="$IP_NETMASK"
+      [root_password]="$ROOT_PASSWORD"
+      [license_file]="$LICENSE_FILE"
+      [insecure]="$ALLOW_INSECURE"
+    )
+
+    initial_config config_vm || print_error "Initial configuration failed"
   fi
 else
   print_error "Disk image 'github-enterprise-$GHES_VERSION.qcow2' not found"
