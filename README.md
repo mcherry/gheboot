@@ -26,6 +26,6 @@ EXAMPLE:
 # and use the configured "vmbr0" network bridge. Also configure root site password and
 # upload license.
 
-gheboot.sh -v 3.15.4 -h ghes-primary -b local -s local-ssd -c 8 -m 65535 -n vmbr0 \
+gheboot.sh -v 3.16.1 -h ghes-primary -b local -s local-ssd -c 8 -m 65535 -n vmbr0 \
   -r "YourPassword123@" -l license-file.ghl -i 192.168.1.0/24 -k -p -d
 ```
