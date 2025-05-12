@@ -1,6 +1,6 @@
 #!/bin/bash -e
 #/ GitHub Enterprise Server Boot
-#/ Usage: gheboot [-vhbscmnrlpodk]
+#/ Usage: gheboot [-vhbsucmnrlpodk]
 #/
 #/ Creates and boots a new GitHub Enterprise Server appliance in Proxmox.
 #/
