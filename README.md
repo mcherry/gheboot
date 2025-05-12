@@ -6,6 +6,7 @@ OPTIONS:
   -h  |  --hostname     Hostname for new virtual machine.
   -b  |  --bootstorage  Name of boot disk storage.
   -s  |  --ssdstorage   Name of SSD storage.
+  -u  |  --userdatasize Size of the data disk in GB. Default: 200
   -c  |  --cores        Number of vCPU cores. Default: 8
   -m  |  --memory       Amount of RAM in megabytes. Default: 65535
   -n  |  --network      Network device name. Default: vmbr0
