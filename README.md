@@ -22,7 +22,7 @@ OPTIONS:
   -k  |  --insecure     Allow insecure HTTPS connection for initial configuration.
 EXAMPLE:
 
-# Download GHES version 3.15.4, import it into "local" storage as "ghes-primary",
+# Download GHES version 3.16.1, import it into "local" storage as "ghes-primary",
 # create a data drive on "local-ssd" storage, create a VM with 8 cores, 64GB ram,
 # and use the configured "vmbr0" network bridge. Also configure root site password and
 # upload license.
