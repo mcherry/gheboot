@@ -8,6 +8,7 @@ OPTIONS:
   -s  |  --ssdstorage   Name of SSD storage.
   -u  |  --userdatasize Size of the data disk in GB. Default: 200
   -c  |  --cores        Number of vCPU cores. Default: 8
+  -t  |  --cputype      CPU type. Default: host
   -m  |  --memory       Amount of RAM in megabytes. Default: 65535
   -n  |  --network      Network device name. Default: vmbr0
   -r  |  --root         Root site password for initial configuration.
@@ -19,7 +20,6 @@ OPTIONS:
   -o  |  --onboot       Configure VM to boot when hypervisor reboots.
   -d  |  --download     Download QCOW2 image for specified version.
   -k  |  --insecure     Allow insecure HTTPS connection for initial configuration.
-
 EXAMPLE:
 
 # Download GHES version 3.15.4, import it into "local" storage as "ghes-primary",
