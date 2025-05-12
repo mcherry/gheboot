@@ -9,6 +9,7 @@
 #/   -h  |  --hostname     Hostname for new virtual machine.
 #/   -b  |  --bootstorage  Name of boot disk storage.
 #/   -s  |  --ssdstorage   Name of SSD storage.
+#/   -u  |  --userdatasize Size of the data disk in GB. Default: 200
 #/   -c  |  --cores        Number of vCPU cores. Default: 8
 #/   -t  |  --cputype      CPU type. Default: host
 #/   -m  |  --memory       Amount of RAM in megabytes. Default: 65535
@@ -42,6 +43,7 @@ POWERON=0
 ALLOW_INSECURE=""
 IP_NETMASK=""
 CPUTYPE="host"
+USERDATAGB="200"
 
 function print_help() { grep '^#/' < "$0" | cut -c4-; exit 1; }
 function print_error() { echo "ERROR: $1"; exit 1; }
@@ -74,7 +76,7 @@ function create_vm() {
   run_command "qm" "set ${ghes_vm[id]} --boot order=scsi0" || error "Failed to configure boot order"
   
   # create data disk on SSD storage
-  run_command "pvesm" "alloc '${ghes_vm[ssd_storage]}' '${ghes_vm[id]}' vm-${ghes_vm[id]}-disk-1 200G" || print_error "Failed to allocate storage disk"
+  run_command "pvesm" "alloc '${ghes_vm[ssd_storage]}' '${ghes_vm[id]}' vm-${ghes_vm[id]}-disk-1 ${ghes_vm[userdatasize]}G" || print_error "Failed to allocate storage disk"
   
   # add the disk to the VM
   run_command "qm" "set ${ghes_vm[id]} --scsihw virtio-scsi-pci --scsi1 ${ghes_vm[ssd_storage]}:vm-${ghes_vm[id]}-disk-1,discard=on,ssd=1" || print_error "Failed to configure storage disk"
@@ -88,9 +90,6 @@ function create_vm() {
 #
 # This includes setting the root password and uploading the license file
 #
-# It uses the VM ID, IP netmask, root password, license file path, and insecure flag
-# as parameters
-#
 # It finds the VM's IP address by pinging the subnet and then configures the VM
 # using the curl command to send a POST request to the VM's management endpoint
 #
@@ -102,7 +101,7 @@ function initial_config() {
   # Each ping times out after 0.2 seconds
   echo "* Attempting to find VM IP address, this might take a few minutes..."
   for ip in $(list_subnet_ips ${ghes_vm[ip_netmask]}); do
-    timeout 0.2 ping -i 0.2 -c1 "$ip" > /dev/null 2>&1
+    run_command "timeout" "0.2 ping -i 0.2 -c1 $ip > /dev/null 2>&1"
   done
 
   # get the MAC address of the VM from the proxmox API
@@ -114,6 +113,7 @@ function initial_config() {
     # get the current ARP table
     ip_address=$(run_command "ip" "neigh show|grep -i $mac_address|grep -v fe80|cut -d ' ' -f 1")
 
+    # try to match the IP address with the MAC address of the VM
     if [ "$ip_address" != "" ]; then
       echo "found $ip_address matching $mac_address"
       for a in {1..5}; do
@@ -195,6 +195,10 @@ while [[ $# -gt 0 ]]; do
       SSD_STORAGE="$2"
       shift 2
       ;;
+    -u|--userdatasize)
+      USERDATAGB="$2"
+      shift 2
+      ;;
     -c|--cores)
       CORES="$2"
       shift 2
@@ -269,6 +273,7 @@ if [ -f "github-enterprise-$GHES_VERSION.qcow2" ]; then
     [network]="$NETWORK"
     [onboot]="$ONBOOT"
     [poweron]="$POWERON"
+    [userdatasize]="$USERDATAGB"
   )
   create_vm new_vm
 
